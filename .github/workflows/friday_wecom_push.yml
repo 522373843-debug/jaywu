@@ -1,0 +1,48 @@
+name: 每周五企业微信群消息推送
+
+on:
+  # 1. 定时触发器 (使用的是 UTC 时间，北京时间 = UTC + 8小时)
+  schedule:
+    # '0 9 * * 5' 代表 UTC 时间每周五 09:00，即【北京时间每周五 17:00】
+    - cron: '5 3 * * 5'
+
+  # 2. 手动触发器 (方便你在 GitHub 页面上随时点击按钮测试效果)
+  workflow_dispatch:
+
+jobs:
+  send-wecom-message:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 获取当前北京时间并推送企业微信消息
+        env:
+          # 从 GitHub Secrets 中安全读取完整的 Webhook 地址
+          WECOM_WEBHOOK_URL: ${{ secrets.WECOM_WEBHOOK_URL }}
+        run: |
+          # 获取当前北京时间日期 (格式: YYYY-MM-DD)
+          TODAY=$(TZ='Asia/Shanghai' date +'%Y-%m-%d')
+          
+          # 使用 jq 安全构造 JSON 请求体，避免换行符或特殊字符导致格式错误
+          PAYLOAD=$(jq -n \
+            --arg content "【周五提醒 | ${TODAY}】\n今日请转入一码通全量文件！" \
+            '{
+              "msgtype": "text",
+              "text": {
+                "content": $content,
+                "mentioned_list": ["@all"]
+              }
+            }')
+          
+          # 发送 POST 请求并捕获响应结果
+          RESPONSE=$(curl -s -X POST "$WECOM_WEBHOOK_URL" \
+            -H "Content-Type: application/json; charset=utf-8" \
+            -d "$PAYLOAD")
+          
+          echo "企业微信接口返回: $RESPONSE"
+          
+          # 校验返回码 errcode 是否为 0，如果失败则让 Action 报错提醒
+          ERRCODE=$(echo "$RESPONSE" | jq -r '.errcode')
+          if [ "$ERRCODE" != "0" ]; then
+            echo "❌ 消息推送失败，请检查 Webhook 地址是否正确！"
+            exit 1
+          fi
+          echo "✅ 消息推送成功！"
